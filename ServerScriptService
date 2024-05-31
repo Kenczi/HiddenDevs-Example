@@ -1,0 +1,131 @@
+--!strict
+
+-- >> SERVICES << --
+
+local Players = game:GetService("Players")
+local DataStoreService = game:GetService("DataStoreService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+local tweenInfo = TweenInfo.new(0.5)
+
+-- >> VARIABLES << --
+
+local playerCash = DataStoreService:GetDataStore("PlayerCash")
+local playerCashInBank = DataStoreService:GetDataStore("PlayerBankCash")
+local remote = ReplicatedStorage.Remotes.BankEvent
+
+-- >> FUNCTIONS << --
+
+local function OnPlayerAdded(player : Player)
+	if player:FindFirstChild("leaderstats") and player:FindFirstChild("leaderstats"):FindFirstChild("Cash") then return end
+	
+	local leaderstats : Folder = Instance.new("Folder")
+	leaderstats.Name = "leaderstats"
+	leaderstats.Parent = player
+	
+	local cash : NumberValue = Instance.new("NumberValue")
+	cash.Name = "Cash"
+	cash.Parent = leaderstats
+	
+	local bankCash : NumberValue = Instance.new("NumberValue")
+	bankCash.Name = "BankCash"
+	bankCash.Parent = player
+	
+	local cashData = playerCash:GetAsync(player.UserId)
+	local bankCashData = playerCashInBank:GetAsync(player.UserId)
+	
+	if cashData then
+		cash.Value = cashData
+	else
+		playerCash:SetAsync(player.UserId, 0)
+	end
+	
+	if bankCashData then
+		bankCash.Value = bankCashData
+	else
+		playerCashInBank:SetAsync(player.UserId, 0)
+	end
+	
+	local UI : ScreenGui | Instance = player:WaitForChild("PlayerGui"):FindFirstChild("Bank")
+	local allowanceAmount : NumberValue | Instance = UI:FindFirstChild("BankHandler"):FindFirstChild("Values"):FindFirstChild("AllowanceAmount")
+	local allowanceInterval : NumberValue | Instance = UI:FindFirstChild("BankHandler"):FindFirstChild("Values"):FindFirstChild("AllowanceInterval")
+
+	local function Allowance()
+		task.spawn(function()
+			task.wait((allowanceInterval :: NumberValue).Value);
+			(player :: any):FindFirstChild("BankCash").Value += (allowanceAmount :: NumberValue).Value
+			Allowance()
+		end)
+	end
+	
+	Allowance()
+end
+
+local function OnPlayerRemoved(player : Player)
+	
+	local cash : NumberValue | Instance = player:FindFirstChild("leaderstats"):FindFirstChild("Cash")
+	local bankCash : NumberValue | Instance = player:FindFirstChild("BankCash")
+	
+	playerCash:SetAsync(player.UserId, (cash :: NumberValue).Value)
+	playerCashInBank:SetAsync(player.UserId, (bankCash :: NumberValue).Value)
+end
+
+local function Withdraw(player : Player, amount : number,_)
+	local cash : NumberValue | Instance = player:FindFirstChild("leaderstats"):FindFirstChild("Cash")
+	local bankCash : NumberValue | Instance = player:FindFirstChild("BankCash")
+	
+	if amount > (bankCash :: NumberValue).Value then return end
+	
+	(bankCash :: NumberValue).Value -= amount;
+	(cash :: NumberValue).Value += amount;
+end
+
+local function Deposit(player : Player, amount : number,_)
+	local cash : NumberValue | Instance = player:FindFirstChild("leaderstats"):FindFirstChild("Cash")
+	local bankCash : NumberValue | Instance = player:FindFirstChild("BankCash")
+
+	if amount > (cash :: NumberValue).Value then return end
+
+	(bankCash :: NumberValue).Value += amount;
+	(cash :: NumberValue).Value -= amount;
+end
+
+local function Transfer(player : Player, amount : number, targetPlayer : Player)
+	local bankCash : NumberValue | Instance = player:FindFirstChild("BankCash")
+	local targetBankCash : NumberValue | Instance = targetPlayer:FindFirstChild("BankCash")
+	
+	if amount > (bankCash :: NumberValue).Value then return end
+	
+	(bankCash :: NumberValue).Value -= amount;
+	(targetBankCash :: NumberValue).Value += amount;
+	
+	local notificationFrame : Frame | Instance = targetPlayer:FindFirstChild("PlayerGui"):WaitForChild("Bank"):FindFirstChild("NewNotification")
+	local notificationMessage : TextLabel | Instance = notificationFrame:FindFirstChild("Message");
+	(notificationMessage :: TextLabel).Text = "Player " .. player.DisplayName .. " has just transferred " .. amount .."$ to you."
+	
+	if (notificationFrame :: Frame).Visible then return end
+	
+	(notificationFrame :: Frame).Visible = true
+	TweenService:Create(notificationFrame, tweenInfo, {Position = UDim2.new(0.884, 0, 0.885, 0)}):Play()
+	task.wait(3)
+	TweenService:Create(notificationFrame, tweenInfo, {Position = UDim2.new(1.11, 0, 0.885, 0)}):Play()
+	task.wait(1.2);
+	(notificationFrame :: Frame).Visible = false
+end
+
+local Events = {
+	[1] = Withdraw;
+	[2] = Deposit;
+	[3] = Transfer;
+}
+
+local function OnRemote(player : Player, amount : number, bankType : number, targetPlayer : Player)
+	Events[bankType](player, amount, targetPlayer)
+end
+
+-- >> CODE << --
+
+Players.PlayerAdded:Connect(OnPlayerAdded)
+Players.PlayerRemoving:Connect(OnPlayerRemoved)
+remote.OnServerEvent:Connect(OnRemote)
