@@ -1,0 +1,7 @@
+--!strict
+
+for _, module : ModuleScript in script:GetChildren() do
+	if not module:IsA("ModuleScript") then continue end
+	local require = require
+	require(module)
+end
